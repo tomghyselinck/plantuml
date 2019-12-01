@@ -29,6 +29,13 @@ from sphinx.util.osutil import (
 )
 
 try:
+    # Python 3
+    from io import BytesIO
+except:
+    # Python 2
+    from StringIO import StringIO as BytesIO
+
+try:
     from PIL import Image
 except ImportError:
     Image = None
@@ -203,10 +210,15 @@ def generate_plantuml_args(self, node, fileformat):
 
 def _executable_renderer(self, node, fileformat, out_fh):
     absincdir = os.path.join(self.builder.srcdir, node['incdir'])
+    if isinstance(out_fh, BytesIO):
+        # BytesIO output does not work with subprocess.Popen
+        out = subprocess.PIPE
+    else:
+        out = out_fh
     try:
         p = subprocess.Popen(generate_plantuml_args(self, node,
                                                     fileformat),
-                             stdout=out_fh, stdin=subprocess.PIPE,
+                             stdout=out, stdin=subprocess.PIPE,
                              stderr=subprocess.PIPE,
                              cwd=absincdir)
     except OSError as err:
@@ -214,7 +226,9 @@ def _executable_renderer(self, node, fileformat, out_fh):
             raise
         raise PlantUmlError('plantuml command %r cannot be run'
                             % self.builder.config.plantuml)
-    serr = p.communicate(node['uml'].encode('utf-8'))[1]
+    sout, serr = p.communicate(node['uml'].encode('utf-8'))
+    if isinstance(out_fh, BytesIO):
+        out_fh.write(sout)
     if p.returncode != 0:
         raise PlantUmlSyntaxError('error while running plantuml\n\n%s' % serr)
 
@@ -275,22 +289,16 @@ def render_plantuml(self, node, fileformat):
 
 
 def render_plantuml_inline(self, node, fileformat):
-    absincdir = os.path.join(self.builder.srcdir, node['incdir'])
-    try:
-        p = subprocess.Popen(generate_plantuml_args(self, node, fileformat),
-                             stdin=subprocess.PIPE,
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE,
-                             cwd=absincdir)
-    except OSError as err:
-        if err.errno != ENOENT:
-            raise
-        raise PlantUmlError('plantuml command %r cannot be run'
-                            % self.builder.config.plantuml)
-    sout, serr = p.communicate(node['uml'].encode('utf-8'))
-    if p.returncode != 0:
-        raise PlantUmlError('error while running plantuml\n\n%s' % serr)
-    return sout.decode('utf-8')
+    plantuml_renderer = _resolve_renderer(self, node, fileformat)
+    with BytesIO() as out_fh:
+        try:
+            plantuml_renderer(self, node, fileformat, out_fh)
+        except PlantUmlSyntaxError as e:
+            if not self.builder.config.plantuml_syntax_error_image:
+                raise e
+            _warn(self, 'error while running plantuml\n\n%s' % e)
+        # return out_fh.getvalue().decode('utf-8')
+        return out_fh.getvalue()
 
 
 def _get_png_tag(self, fnames, node):
