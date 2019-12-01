@@ -28,12 +28,8 @@ from sphinx.util.osutil import (
     ENOENT,
 )
 
-try:
-    # Python 3
-    from io import BytesIO
-except:
-    # Python 2
-    from StringIO import StringIO as BytesIO
+# Python 2/3
+from io import BytesIO
 
 try:
     from PIL import Image
@@ -49,6 +45,7 @@ except ImportError:  # Sphinx < 1.4
 try:
     from sphinx.util import logging
     logger = logging.getLogger(__name__)
+
     def _warn(self, msg):
         logger.warning(msg)
 except (AttributeError, ImportError):  # Sphinx < 1.6
@@ -234,7 +231,12 @@ def _executable_renderer(self, node, fileformat, out_fh):
 
 
 def _server_renderer(self, node, fileformat, out_fh):
-    from plantuml import PlantUML, PlantUMLHTTPError
+    try:
+        from plantuml import PlantUML, PlantUMLHTTPError
+    except ImportError as e:
+        _warn(self, 'error while loading \'plantuml\' package. Did you'
+              ' install \'sphinxcontrib-plantuml\' with \'server\' extras?')
+        raise PlantUmlError('Missing plantuml package') from e
 
     # TODO - We should be using URL parser/generator from urllib:
     server_url = '{base_url}/{fmt}/'.format(
@@ -254,9 +256,11 @@ def _server_renderer(self, node, fileformat, out_fh):
         if e.response.status == 400:
             if self.builder.config.plantuml_syntax_error_image:
                 out_fh.write(e.content)
-            raise PlantUmlSyntaxError('error while running plantuml: %s' % (diagram_error,)) from e
+            raise PlantUmlSyntaxError(
+                'error while running plantuml: %s' % (diagram_error,)) from e
     except AttributeError as e:
-        # XXX - Workaround for Python 3 compatibility issue in python-plantuml v0.3.0
+        # XXX - Workaround for Python 3 compatibility issue
+        #       in python-plantuml ( <= v0.3.0 )
         raise PlantUmlError('error while running plantuml: %s' % e) from e
 
     out_fh.write(content)
