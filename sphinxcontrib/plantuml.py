@@ -271,7 +271,6 @@ def render_plantuml(self, node, fileformat):
             if not self.builder.config.plantuml_syntax_error_image:
                 raise e
             _warn(self, 'error while running plantuml\n\n%s' % e)
-            return False
     return refname, outfname
 
 
