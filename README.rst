@@ -1,6 +1,17 @@
 PlantUML for Sphinx
 ===================
 
+Installation
+------------
+
+    pip install sphinxcontrib-plantuml
+
+If you need support for using PlantUML server instead of a local installed
+executable/script, then you can install with the ``server`` extra. This will
+also install the ``python-plantuml`` package.
+
+    pip install sphinxcontrib-plantuml[server]
+
 Usage
 -----
 
@@ -59,6 +70,10 @@ Configuration
 
 plantuml
   Path to plantuml executable. (default: 'plantuml')
+  Alternatively, you can also specify a `PlantUML server`_. For example: :hyperlink:`http://localhost:8080/`.
+  See `Limitations`_ for unsupported feature when using the PlantUML server.
+
+.. _PlantUML server: https://github.com/plantuml/plantuml-server
 
 plantuml_output_format
   Type of output image for HTML renderer. (default: 'png')
@@ -92,3 +107,8 @@ plantuml_epstopdf
 
 plantuml_syntax_error_image
   Should plantuml generate images with render errors. (default: False)
+
+Limitations
+-----------
+
+When using the PlantUML server, including files will not work properly.
