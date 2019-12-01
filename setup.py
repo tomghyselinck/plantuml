@@ -2,7 +2,8 @@
 
 from setuptools import setup, find_packages
 
-long_desc = open('README.rst').read()
+with open('README.rst') as fh:
+    long_desc = fh.read()
 
 requires = ['Sphinx>=1.1']
 
@@ -32,5 +33,10 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     install_requires=requires,
+    extras_require={
+        'server': [
+            'plantuml',
+        ],
+    },
     namespace_packages=['sphinxcontrib'],
 )
