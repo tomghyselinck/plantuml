@@ -53,6 +53,10 @@ class PlantUmlError(SphinxError):
     pass
 
 
+class PlantUmlSyntaxError(PlantUmlError):
+    pass
+
+
 class plantuml(nodes.General, nodes.Element):
     pass
 
@@ -197,34 +201,78 @@ def generate_plantuml_args(self, node, fileformat):
     return args
 
 
+def _executable_renderer(self, node, fileformat, out_fh):
+    absincdir = os.path.join(self.builder.srcdir, node['incdir'])
+    try:
+        p = subprocess.Popen(generate_plantuml_args(self, node,
+                                                    fileformat),
+                             stdout=out_fh, stdin=subprocess.PIPE,
+                             stderr=subprocess.PIPE,
+                             cwd=absincdir)
+    except OSError as err:
+        if err.errno != ENOENT:
+            raise
+        raise PlantUmlError('plantuml command %r cannot be run'
+                            % self.builder.config.plantuml)
+    serr = p.communicate(node['uml'].encode('utf-8'))[1]
+    if p.returncode != 0:
+        raise PlantUmlSyntaxError('error while running plantuml\n\n%s' % serr)
+
+
+def _server_renderer(self, node, fileformat, out_fh):
+    from plantuml import PlantUML, PlantUMLHTTPError
+
+    # TODO - We should be using URL parser/generator from urllib:
+    server_url = '{base_url}/{fmt}/'.format(
+        base_url=self.builder.config.plantuml.rstrip('/'),
+        fmt=fileformat)
+    pl = PlantUML(server_url)
+
+    try:
+        plantuml_text = node['uml']
+        content = pl.processes(plantuml_text)
+    except PlantUMLHTTPError as e:
+        _warn(self, 'error while running plantuml: %s' % (e.response,))
+        try:
+            diagram_error = e.response['x-plantuml-diagram-error']
+        except KeyError:
+            diagram_error = str(e.response)
+        if e.response.status == 400:
+            if self.builder.config.plantuml_syntax_error_image:
+                out_fh.write(e.content)
+            raise PlantUmlSyntaxError('error while running plantuml: %s' % (diagram_error,)) from e
+    except AttributeError as e:
+        # XXX - Workaround for Python 3 compatibility issue in python-plantuml v0.3.0
+        raise PlantUmlError('error while running plantuml: %s' % e) from e
+
+    out_fh.write(content)
+
+
+def _resolve_renderer(self, node, fileformat):
+    plantuml_ref = self.builder.config.plantuml
+    if isinstance(plantuml_ref, bytes):
+        plantuml_ref = str(plantuml_ref, encoding='utf-8')
+    if isinstance(plantuml_ref, str) and plantuml_ref.startswith('http://'):
+        return _server_renderer
+    return _executable_renderer
+
+
 def render_plantuml(self, node, fileformat):
     refname, outfname = generate_name(self, node, fileformat)
     if os.path.exists(outfname):
         return refname, outfname  # don't regenerate
-    absincdir = os.path.join(self.builder.srcdir, node['incdir'])
     ensuredir(os.path.dirname(outfname))
-    f = open(outfname, 'wb')
-    try:
+
+    plantuml_renderer = _resolve_renderer(self, node, fileformat)
+    with open(outfname, 'wb') as out_fh:
         try:
-            p = subprocess.Popen(generate_plantuml_args(self, node,
-                                                        fileformat),
-                                 stdout=f, stdin=subprocess.PIPE,
-                                 stderr=subprocess.PIPE,
-                                 cwd=absincdir)
-        except OSError as err:
-            if err.errno != ENOENT:
-                raise
-            raise PlantUmlError('plantuml command %r cannot be run'
-                                % self.builder.config.plantuml)
-        serr = p.communicate(node['uml'].encode('utf-8'))[1]
-        if p.returncode != 0:
-            if self.builder.config.plantuml_syntax_error_image:
-                _warn(self, 'error while running plantuml\n\n%s' % serr)
-            else:
-                raise PlantUmlError('error while running plantuml\n\n%s' % serr)
-        return refname, outfname
-    finally:
-        f.close()
+            plantuml_renderer(self, node, fileformat, out_fh)
+        except PlantUmlSyntaxError as e:
+            if not self.builder.config.plantuml_syntax_error_image:
+                raise e
+            _warn(self, 'error while running plantuml\n\n%s' % e)
+            return False
+    return refname, outfname
 
 
 def render_plantuml_inline(self, node, fileformat):
